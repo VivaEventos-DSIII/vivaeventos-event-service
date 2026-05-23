@@ -6,6 +6,8 @@ import com.vivaeventos.eventservice.dto.EventResponse;
 import com.vivaeventos.eventservice.dto.EventDTO;
 import com.vivaeventos.eventservice.dto.UpdatePriceRequest;
 import com.vivaeventos.eventservice.service.EventService;
+import com.vivaeventos.eventservice.dto.CancelEventRequest;
+import com.vivaeventos.eventservice.exception.EventNotFoundException;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -66,5 +68,50 @@ public class EventController {
             @PathVariable UUID id,
             @Valid @RequestBody UpdatePriceRequest request) {
         return ResponseEntity.ok(eventService.updatePrice(id, request));
+    }
+    /**
+     * DELETE /events/{id}
+     *
+     * Cancela un evento y notifica a los clientes.
+     *
+     * ¿Por qué DELETE y no PATCH?
+     * - Semánticamente DELETE indica que el recurso deja de estar disponible.
+     * - No eliminamos el registro de BD (soft delete) — solo cambiamos el status.
+     * - Es la convención REST más apropiada para esta operación.
+     *
+     * @PathVariable id     → UUID del evento a cancelar
+     * @RequestBody request → DTO con el motivo (opcional, puede omitirse)
+     *
+     * Respuestas posibles:
+     * - HTTP 200 OK        → evento cancelado exitosamente
+     * - HTTP 404 Not Found → evento no existe
+     * - HTTP 409 Conflict  → evento ya estaba cancelado
+     *
+     * Ejemplo de llamada:
+     * DELETE http://localhost:8081/events/550e8400-e29b-41d4-a716-446655440000
+     * Content-Type: application/json
+     * { "reason": "Problemas de seguridad en el venue" }
+     *
+     * O sin body si no hay motivo:
+     * DELETE http://localhost:8081/events/550e8400-e29b-41d4-a716-446655440000
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> cancelEvent(
+            @PathVariable UUID id,
+            @RequestBody(required = false) @Valid CancelEventRequest request) {
+        try {
+            EventResponse response = eventService.cancelEvent(id, request);
+            return ResponseEntity.ok(response);
+
+        } catch (EventNotFoundException e) {
+            // HTTP 404 → el evento no existe
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+
+        } catch (IllegalStateException e) {
+            // HTTP 409 Conflict → el evento ya está cancelado
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", e.getMessage()));
+        }
     }
 }
