@@ -300,25 +300,21 @@ public class EventService {
      */
     private void publishEventCancelled(Event event, CancelEventRequest request) {
         try {
-            // Construimos el mensaje con los datos del evento + motivo de cancelación
-            // El notification-service usará estos datos para redactar el correo
             java.util.Map<String, Object> message = new java.util.HashMap<>();
-            message.put("eventId", event.getId().toString());
+            message.put("eventId", event.getId());
             message.put("eventName", event.getName());
-            message.put("eventDate", event.getEventDate().toString());
+            message.put("eventDate", event.getEventDate());
             message.put("venue", event.getVenue());
+            message.put("organizerId", event.getOrganizerId());
             message.put("reason", request != null && request.getReason() != null
                     ? request.getReason()
                     : "El organizador ha cancelado el evento");
 
-            // key = ID del evento → permite que todos los mensajes de este evento
-            // vayan a la misma partición de Kafka (orden garantizado)
             kafkaTemplate.send(eventCancelledTopic, event.getId().toString(), message);
             log.info("Publicado en Kafka topic '{}' cancelación del evento {}",
                     eventCancelledTopic, event.getId());
 
         } catch (Exception e) {
-            // En producción usarías un outbox pattern para garantizar entrega
             log.error("Error al publicar cancelación en Kafka para evento {}: {}",
                     event.getId(), e.getMessage());
         }

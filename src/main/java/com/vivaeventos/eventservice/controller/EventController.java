@@ -7,7 +7,6 @@ import com.vivaeventos.eventservice.dto.EventDTO;
 import com.vivaeventos.eventservice.dto.UpdatePriceRequest;
 import com.vivaeventos.eventservice.service.EventService;
 import com.vivaeventos.eventservice.dto.CancelEventRequest;
-import com.vivaeventos.eventservice.exception.EventNotFoundException;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -96,22 +95,9 @@ public class EventController {
      * DELETE http://localhost:8081/events/550e8400-e29b-41d4-a716-446655440000
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> cancelEvent(
+    public ResponseEntity<EventResponse> cancelEvent(
             @PathVariable UUID id,
             @RequestBody(required = false) @Valid CancelEventRequest request) {
-        try {
-            EventResponse response = eventService.cancelEvent(id, request);
-            return ResponseEntity.ok(response);
-
-        } catch (EventNotFoundException e) {
-            // HTTP 404 → el evento no existe
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", e.getMessage()));
-
-        } catch (IllegalStateException e) {
-            // HTTP 409 Conflict → el evento ya está cancelado
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", e.getMessage()));
-        }
+        return ResponseEntity.ok(eventService.cancelEvent(id, request));
     }
 }
