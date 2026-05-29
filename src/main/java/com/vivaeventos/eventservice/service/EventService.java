@@ -5,6 +5,7 @@ import com.vivaeventos.eventservice.dto.EventResponse;
 import com.vivaeventos.eventservice.dto.EventDTO;
 import com.vivaeventos.eventservice.model.Event;
 import com.vivaeventos.eventservice.repository.EventRepository;
+import com.vivaeventos.eventservice.dto.CancelEventRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,11 +48,15 @@ public class EventService {
     @Value("${kafka.topics.event-created:event.created}")
     private String eventCreatedTopic;
 
+    @Value("${kafka.topics.event-cancelled:event.cancelled}")
+    private String eventCancelledTopic;
+
     // Inyección por constructor (recomendada sobre @Autowired en campo)
     public EventService(EventRepository eventRepository,
                         KafkaTemplate<String, Object> kafkaTemplate) {
         this.eventRepository = eventRepository;
         this.kafkaTemplate   = kafkaTemplate;
+
     }
 
     /**
@@ -154,7 +159,7 @@ public class EventService {
      * Publica un mensaje en el topic de Kafka "event.created".
      * Los microservicios suscritos (notification-service, etc.) lo recibirán.
      *
-     * Si Kafka no está disponible, logueamos el error pero NO lanzamos excepción
+     * Si Kafka no está disponible, logueamos el error, pero NO lanzamos excepción
      * para no romper el flujo de creación del evento (el evento ya se guardó en BD).
      */
 
@@ -232,7 +237,88 @@ public class EventService {
         //    El order-service consultará este precio actualizado en nuevas compras (criterio 2).
         return EventResponse.from(updatedEvent);
     }
+    /**
+     * Cancela un evento y notifica a los clientes vía Kafka.
+     *
+     * Reglas de negocio:
+     *  1. El evento debe existir → si no, lanza EventNotFoundException (HTTP 404)
+     *  2. El evento no debe estar ya cancelado → si lo está, lanza IllegalStateException (HTTP 409)
+     *  3. Si todo es válido → marca como CANCELLED, guarda y publica en Kafka
+     *
+     * @Transactional garantiza que si falla el save, no se publica en Kafka
+     * con un estado inconsistente.
+     *
+     * @param eventId UUID del evento a cancelar
+     * @param request DTO con el motivo de cancelación (opcional)
+     * @return        EventResponse con el evento ya marcado como CANCELLED
+     * @throws EventNotFoundException  si el evento no existe
+     * @throws IllegalStateException   si el evento ya está cancelado
+     */
+    @Transactional
+    public EventResponse cancelEvent(UUID eventId, CancelEventRequest request) {
+        log.info("Cancelando evento {} - motivo: {}", eventId,
+                request != null ? request.getReason() : "sin motivo");
 
+        // 1. Buscar el evento — lanza EventNotFoundException si no existe (HTTP 404)
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new EventNotFoundException(
+                        "Evento no encontrado con ID: " + eventId));
+
+        // 2. Verificar que el evento no está ya cancelado
+        //    No tiene sentido cancelar algo que ya está cancelado
+        if (event.getStatus() == Event.EventStatus.CANCELLED) {
+            throw new IllegalStateException(
+                    "El evento ya está cancelado");
+        }
+
+        // 3. Marcar el evento como CANCELLED en la BD
+        //    A partir de este momento no aparecerá en el catálogo
+        //    ni permitirá nuevas compras
+        event.setStatus(Event.EventStatus.CANCELLED);
+        Event cancelledEvent = eventRepository.save(event);
+        log.info("Evento {} marcado como CANCELLED en BD", eventId);
+
+        // 4. Publicar en Kafka para que notification-service notifique a los clientes
+        //    Si Kafka falla, logueamos el error, pero NO hacemos rollback del save
+        //    porque el evento SÍ quedó cancelado en BD (lo importante)
+        publishEventCancelled(cancelledEvent, request);
+
+        return EventResponse.from(cancelledEvent);
+    }
+
+    /**
+     * Publica un mensaje en el topic "event.cancelled" de Kafka.
+     *
+     * El notification-service escucha este topic y envía un correo
+     * a cada cliente que compró boleta para este evento (criterio 2 US-12).
+     *
+     * Si Kafka no está disponible, logueamos el error, pero NO lanzamos excepción
+     * para no deshacer la cancelación que ya quedó guardada en BD.
+     *
+     * @param event   entidad del evento ya cancelado
+     * @param request DTO con el motivo, puede ser null
+     */
+    private void publishEventCancelled(Event event, CancelEventRequest request) {
+        try {
+            java.util.Map<String, Object> message = new java.util.HashMap<>();
+            message.put("eventId", event.getId());
+            message.put("eventName", event.getName());
+            message.put("eventDate", event.getEventDate());
+            message.put("venue", event.getVenue());
+            message.put("organizerId", event.getOrganizerId());
+            message.put("reason", request != null && request.getReason() != null
+                    ? request.getReason()
+                    : "El organizador ha cancelado el evento");
+
+            kafkaTemplate.send(eventCancelledTopic, event.getId().toString(), message);
+            log.info("Publicado en Kafka topic '{}' cancelación del evento {}",
+                    eventCancelledTopic, event.getId());
+
+        } catch (Exception e) {
+            log.error("Error al publicar cancelación en Kafka para evento {}: {}",
+                    event.getId(), e.getMessage());
+        }
+    }
     private void publishEventCreated(Event event) {
         try {
             // El mensaje que enviamos a Kafka es el EventResponse (serializado a JSON)
