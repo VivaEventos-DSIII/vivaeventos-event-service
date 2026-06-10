@@ -6,36 +6,29 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-
-/**
- * DTO simplificado para el catálogo de eventos
- *
- * Solo expone los campos necesarios:
- *   - Nombre del evento
- *   - Fecha del evento
- *   - Lugar del evento
- */
 public class EventDTO {
-
+    private UUID id;
     private String name;
     private LocalDateTime eventDate;
     private String venue;
+    private String category;
+    private Double price;
+    private String status;
 
-    /**
-     * Método estático de fábrica: convierte una entidad Event en un EventDTO.
-     * <p>
-     * Se usa así: EventDTO.from(event)
-     */
     public static EventDTO from(Event event) {
         return new EventDTO(
+                event.getId(),
                 event.getName(),
                 event.getEventDate(),
-                event.getVenue()
+                event.getVenue(),
+                event.getCategory(),
+                event.getPrice() != null ? event.getPrice().doubleValue() : null,
+                event.getStatus() != null ? event.getStatus().name() : null
         );
     }
 }
-
