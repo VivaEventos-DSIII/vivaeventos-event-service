@@ -85,9 +85,9 @@ public class EventService {
         event.setOrganizerId(request.getOrganizerId());
         event.setStatus(Event.EventStatus.ACTIVE);  // Todo evento nuevo nace como ACTIVE
 
-        // 2. Guardar en la BD — JPA genera el INSERT automáticamente
-        //    savedEvent tiene el UUID que generó la BD
-        Event savedEvent = eventRepository.save(event);
+        // 2. Guardar en la BD — saveAndFlush fuerza el INSERT inmediato para que
+        //    @CreationTimestamp y @UpdateTimestamp se pueblen antes de construir la respuesta
+        Event savedEvent = eventRepository.saveAndFlush(event);
         log.info("Evento guardado con ID: {}", savedEvent.getId());
 
         // 3. Publicar mensaje en Kafka para notificar a otros microservicios
@@ -191,6 +191,13 @@ public class EventService {
      * @throws EventNotFoundException  si el evento no existe
      * @throws IllegalStateException   si el evento ya inició o no está activo
      */
+    @Transactional(readOnly = true)
+    public EventResponse getEventById(UUID id) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new EventNotFoundException("Evento no encontrado con ID: " + id));
+        return EventResponse.from(event);
+    }
+
     @Transactional
     public EventResponse updatePrice(UUID eventId, UpdatePriceRequest request) {
         log.info("Actualizando precio del evento {} a {}", eventId, request.getNewPrice());

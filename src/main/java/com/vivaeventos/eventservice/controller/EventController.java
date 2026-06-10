@@ -94,6 +94,11 @@ public class EventController {
      * O sin body si no hay motivo:
      * DELETE http://localhost:8081/events/550e8400-e29b-41d4-a716-446655440000
      */
+    @GetMapping("/{id}")
+    public ResponseEntity<EventResponse> getEventById(@PathVariable UUID id) {
+        return ResponseEntity.ok(eventService.getEventById(id));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<EventResponse> cancelEvent(
             @PathVariable UUID id,

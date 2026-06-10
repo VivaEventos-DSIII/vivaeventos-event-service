@@ -26,6 +26,9 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/events/catalog").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/events").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/events/*").permitAll()
                         .requestMatchers(HttpMethod.POST,   "/events").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH,  "/events/*/price").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/events/*").hasRole("ADMIN")
